@@ -10,7 +10,7 @@ import javax.swing.table.DefaultTableModel;
 public class VendaGUI extends JFrame {
     private JTextField txtCodigoFuncionario, txtCodigoProduto, txtQuantidade;
     private JTable tabelaProdutos;
-    private JButton btnAdicionarProduto, btnFinalizarVenda;
+    private JButton btnAdicionarProduto, btnFinalizarVenda, btnLimpar, btnRemoverItem;
     private JLabel lblTotal;
     private double valorTotal = 0.0;
     private Connection conexao;
@@ -21,7 +21,7 @@ public class VendaGUI extends JFrame {
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
 
-        // Painel superior: código do funcionario
+        // Painel superior: código do funcionário
         JPanel panelTop = new JPanel();
         panelTop.add(new JLabel("Código Funcionário:"));
         txtCodigoFuncionario = new JTextField(10);
@@ -31,13 +31,14 @@ public class VendaGUI extends JFrame {
         // Tabela de produtos
         String[] colunas = {"Código", "Descrição", "Quantidade", "Valor Unitário", "Total"};
         DefaultTableModel model = new DefaultTableModel(new Object[0][5], colunas);
-        tabelaProdutos = new JTable(model); // Aqui inicializa a tabela
+        tabelaProdutos = new JTable(model);
+        JScrollPane scrollPane = new JScrollPane(tabelaProdutos);
+        add(scrollPane, BorderLayout.CENTER);
 
-        JScrollPane scrollPane = new JScrollPane(tabelaProdutos); // Adiciona a tabela dentro de um JScrollPane
-        add(scrollPane, BorderLayout.CENTER); // Adiciona o JScrollPane à parte central da tela
-
-        // Painel inferior: entrada de produto e finalização
+        // Painel inferior: entrada de produto e ações
         JPanel panelBottom = new JPanel(new GridLayout(2, 1));
+
+        // Painel de inputs
         JPanel panelInputs = new JPanel(new FlowLayout(FlowLayout.LEFT));
         panelInputs.add(new JLabel("Código Produto:"));
         txtCodigoProduto = new JTextField(10);
@@ -49,21 +50,33 @@ public class VendaGUI extends JFrame {
         panelInputs.add(btnAdicionarProduto);
         panelBottom.add(panelInputs);
 
-        // Painel de total e finalizar
+        // Painel de ações (total e botões)
         JPanel panelActions = new JPanel();
         lblTotal = new JLabel("Total: R$ 0,00");
         panelActions.add(lblTotal);
+
+        // Botão para remover item selecionado
+        btnRemoverItem = new JButton("Remover Item");
+        panelActions.add(btnRemoverItem);
+
+        // Botão para limpar a venda
+        btnLimpar = new JButton("Limpar Venda");
+        panelActions.add(btnLimpar);
+
         btnFinalizarVenda = new JButton("Finalizar Venda");
         panelActions.add(btnFinalizarVenda);
-        panelBottom.add(panelActions);
 
+        panelBottom.add(panelActions);
         add(panelBottom, BorderLayout.SOUTH);
 
-        // Conexão com o banco
+        // Conexão com o banco de dados
         conexao = new ConexaoBD().getConexao();
 
+        // Ações dos botões
         btnAdicionarProduto.addActionListener(e -> adicionarProduto());
         btnFinalizarVenda.addActionListener(e -> finalizarVenda());
+        btnRemoverItem.addActionListener(e -> removerItem());
+        btnLimpar.addActionListener(e -> limparVenda());
     }
 
     private void adicionarProduto() {
@@ -109,6 +122,32 @@ public class VendaGUI extends JFrame {
         }
     }
 
+    // Remove o item selecionado na tabela e atualiza o total da venda
+    private void removerItem() {
+        DefaultTableModel model = (DefaultTableModel) tabelaProdutos.getModel();
+        int selectedRow = tabelaProdutos.getSelectedRow();
+        if (selectedRow == -1) {
+            JOptionPane.showMessageDialog(this, "Selecione um item para remover.");
+            return;
+        }
+        double itemTotal = Double.parseDouble(model.getValueAt(selectedRow, 4).toString());
+        valorTotal -= itemTotal;
+        lblTotal.setText("Total: R$ " + valorTotal);
+        model.removeRow(selectedRow);
+    }
+
+    // Limpa a venda: remove os itens da tabela, zera o total e limpa os campos de entrada
+    private void limparVenda() {
+        DefaultTableModel model = (DefaultTableModel) tabelaProdutos.getModel();
+        model.setRowCount(0);
+        valorTotal = 0.0;
+        lblTotal.setText("Total: R$ " + valorTotal);
+        txtCodigoProduto.setText("");
+        txtQuantidade.setText("");
+        // Opcional: também pode limpar o campo do funcionário, se necessário
+        // txtCodigoFuncionario.setText("");
+    }
+
     private void finalizarVenda() {
         try {
             if (valorTotal == 0.0) {
@@ -116,16 +155,15 @@ public class VendaGUI extends JFrame {
                 return;
             }
 
-            // Insere a venda na tabela sem especificar o ven_codigo, que será gerado automaticamente.
+            // Insere a venda na tabela (o código da venda será gerado automaticamente)
             String sqlVenda = "INSERT INTO tb_vendas (ven_horario, ven_valor_total, tb_funcionario_fun_codigo) VALUES (?, ?, ?)";
-            // Especifica explicitamente que queremos retornar apenas a coluna "ven_codigo"
             PreparedStatement stmtVenda = conexao.prepareStatement(sqlVenda, new String[]{"ven_codigo"});
             stmtVenda.setTimestamp(1, Timestamp.valueOf(java.time.LocalDateTime.now()));
             stmtVenda.setDouble(2, valorTotal);
             stmtVenda.setLong(3, Long.parseLong(txtCodigoFuncionario.getText()));
             stmtVenda.executeUpdate();
 
-            // Agora, getGeneratedKeys() deve retornar somente o valor de ven_codigo
+            // Obtém o código gerado para a venda
             ResultSet rs = stmtVenda.getGeneratedKeys();
             if (rs.next()) {
                 long codigoVenda = rs.getLong(1);
@@ -140,10 +178,10 @@ public class VendaGUI extends JFrame {
                     // Insere o item vendido
                     String sqlItensVendidos = "INSERT INTO tb_itens (itn_codigo, itn_qtd, itn_valor_parcial, tb_produtos_pdt_codigo, tb_vendas_ven_codigo) VALUES (DEFAULT, ?, ?, ?, ?)";
                     PreparedStatement stmtItens = conexao.prepareStatement(sqlItensVendidos);
-                    stmtItens.setInt(1, quantidade); // quantidade
-                    stmtItens.setDouble(2, valorParcial); // valor parcial
-                    stmtItens.setLong(3, codigoProduto); // código do produto
-                    stmtItens.setLong(4, codigoVenda); // código da venda
+                    stmtItens.setInt(1, quantidade);
+                    stmtItens.setDouble(2, valorParcial);
+                    stmtItens.setLong(3, codigoProduto);
+                    stmtItens.setLong(4, codigoVenda);
                     stmtItens.executeUpdate();
 
                     // Atualiza o estoque

@@ -38,7 +38,7 @@ public class ConexaoBD {
     public ConexaoBD (){
 
         usuario = "postgres";
-        senha = "2216";
+        senha = "senha";
         nomeBanco = "TrabalhoBD2.2";
         url = "jdbc:postgresql://localhost:5433/" + nomeBanco;
 
